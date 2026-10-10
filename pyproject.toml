@@ -1,0 +1,15 @@
+[project]
+name = "reservations-agent"
+version = "0.1.0"
+description = "Restaurant reservation voice agent"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "dotenv>=0.9.9",
+    "fastapi[standard]>=0.142.2",
+    "ffmpeg>=1.4",
+    "pipecat-ai-prebuilt>=1.3.0",
+    "pipecat-ai[daily,groq,moq,sarvam,webrtc]>=1.12.0",
+    "python-dotenv>=1.2.4",
+    "supabase>=2.32.0",
+]
