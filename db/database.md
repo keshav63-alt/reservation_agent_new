@@ -93,7 +93,7 @@ Every function returns a plain dict with an `ok` flag and a `message`, so the LL
 Example:
 
 ```python
-from reservations import check_availability, book_reservation
+from services.reservations import check_availability, book_reservation
 
 check_availability("r1", "2026-12-20", "20:00", 2)
 # {'ok': True, 'available': True, 'message': 'A table is available.'}

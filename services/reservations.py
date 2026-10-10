@@ -3,7 +3,7 @@ import secrets
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from connection import supabase
+from db.connection import supabase
 
 TZ = "Asia/Kolkata"
 STEP_MIN = 30       # bookings allowed on the hour / half hour

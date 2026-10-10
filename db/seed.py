@@ -1,5 +1,5 @@
 # db/seed.py
-from connection import supabase
+from db.connection import supabase
 
 RESTAURANT = {
     "restaurant_id": "r1",
