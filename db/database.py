@@ -1,26 +1,17 @@
-import os 
+# check_key.py
+import os, base64, json
 from dotenv import load_dotenv
-from supabase import create_client , Client
+
 load_dotenv(override=True)
+key = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
 
-url = os.getenv("SUPABASE_DATA_URL")
-api = os.getenv("SUPABASE_PUBLIC_API")
-
-supabase:Client  = create_client(url,api)
-
-try:
-     data = {
-          "title":"mkea",
-          "content":"kas"
-          
-     }
-     response = supabase.table("posts").create(data).execute(  )
-     print("table create sucessfully new row",response.data)
-except Exception as e:
-     print("error",e)
-
-# class ReastaurantDatabase:
-#      pass 
-
-
-  
+if key.startswith("sb_secret_"):
+    print("OK: new-style secret key (bypasses RLS)")
+elif key.startswith("sb_publishable_"):
+    print("WRONG: this is a publishable key (subject to RLS)")
+elif key.count(".") == 2:
+    payload = key.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    print("JWT role:", json.loads(base64.urlsafe_b64decode(payload)).get("role"))
+else:
+    print("Unrecognised key format")
