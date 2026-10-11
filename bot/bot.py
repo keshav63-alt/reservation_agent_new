@@ -327,7 +327,7 @@ async def bot(runner_args: RunnerArguments):
     llm = GroqLLMService(
         api_key=os.environ["GROQ_API_KEY"],
         settings=GroqLLMService.Settings(
-            model="openai/gpt-oss-120b",
+            model=os.environ("GROQ_MODEL","openai/gpt-oss-120b"),
         ),
     )
 
@@ -335,9 +335,9 @@ async def bot(runner_args: RunnerArguments):
     tts = SarvamTTSService(
         api_key=os.environ["SARVAM_API_KEY"],
         settings=SarvamTTSService.Settings(
-            model="bulbul:v3",
-            voice="shubh",
-            language="en-IN",
+            model=os.environ["TTS_MODEL","bulbul:v3"],
+            voice=os.environ["VOICE","shubh"],
+            language=os.environ["LANGUAGE","en-IN"],
         ),
         sample_rate=24000,
     )
