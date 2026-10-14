@@ -1,146 +1,3 @@
-# # bot.py  (project root)
-# #
-# # Voice pipeline for the restaurant reservation agent:
-# #   browser audio -> Sarvam STT -> Groq LLM (+ reservation tools) -> Sarvam TTS -> browser
-# #
-# # Run from the project root:   uv run bot.py
-# # Then open the URL it prints (http://localhost:7860) and click Connect.
-# import asyncio
-# import os
-
-# from dotenv import load_dotenv
-# from loguru import logger
-
-# from pipecat.frames.frames import TTSSpeakFrame
-# from pipecat.pipeline.pipeline import Pipeline
-# from pipecat.pipeline.worker import PipelineParams, PipelineWorker
-# from pipecat.processors.aggregators.llm_context import LLMContext
-# from pipecat.processors.aggregators.llm_response_universal import (
-#     LLMContextAggregatorPair,
-#     LLMUserAggregatorParams,
-# )
-# from pipecat.runner.types import RunnerArguments
-# from pipecat.runner.utils import create_transport
-# from pipecat.services.groq.llm import GroqLLMService
-# from pipecat.services.sarvam.stt import SarvamRealtimeSTTService
-# from pipecat.services.sarvam.tts import SarvamTTSService
-# from pipecat.transports.base_transport import TransportParams
-# from pipecat.turns.user_start import ExternalUserTurnStartStrategy
-# from pipecat.turns.user_stop import ExternalUserTurnStopStrategy
-# from pipecat.turns.user_turn_strategies import UserTurnStrategies
-# from pipecat.workers.runner import WorkerRunner
-
-# from bot.prompts import  get_voice_prompt
-# from bot.tools import TOOLS
-
-# load_dotenv(override=True)
-
-# RESTAURANT_ID = "r1"
-
-
-# async def bot(runner_args: RunnerArguments):
-#     """Entry point: Pipecat calls this once per connected caller."""
-
-#     # ---------- transport (browser WebRTC for testing) ----------
-#     transport = await create_transport(
-#         runner_args,
-#         {
-#             "webrtc": lambda: TransportParams(
-#                 audio_in_enabled=True,
-#                 audio_out_enabled=True,
-#             ),
-#         },
-#     )
-
-#     # ---------- speech to text ----------
-#     # Sarvam runs its own server-side VAD, so there is NO Silero VAD in this pipeline.
-#     stt = SarvamRealtimeSTTService(
-#         api_key=os.environ["SARVAM_API_KEY"],
-#         sample_rate=16000,
-#         settings=SarvamRealtimeSTTService.Settings(
-#             language_code="en-IN",   # "hi-IN", "te-IN", or "auto" for other callers
-#             mode="transcribe",       # "codemix" suits Hinglish
-#             stream_type="fast",      # lowest latency option
-#         ),
-#         should_interrupt=True,       # caller can talk over the bot
-#     )
-
-#     # ---------- LLM ----------
-#     llm = GroqLLMService(
-#         api_key=os.environ["GROQ_API_KEY"],
-#         settings=GroqLLMService.Settings(model="openai/gpt-oss-120b"),
-#     )
-
-#     # ---------- text to speech ----------
-#     tts = SarvamTTSService(
-#     api_key=os.environ["SARVAM_API_KEY"],
-#     settings=SarvamTTSService.Settings(
-#         model="bulbul:v3",
-#         voice="shubh",
-#         language="en-IN",
-#     ),
-#     sample_rate=24000,
-# )
-
-#     # ---------- conversation context ----------
-#     # Built per call so "today" is correct. Runs in a thread because it queries Supabase.
-#     # system_prompt, greeting = await asyncio.to_thread(
-#     #     lambda: (build_system_prompt(RESTAURANT_ID), build_greeting(RESTAURANT_ID))
-#     # )
-
-#     messages ={"role": "system", "content": }
-#     context = LLMContext(messages, tools=TOOLS)
-
-#     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
-#         context,
-#         user_params=LLMUserAggregatorParams(
-#             # Sarvam's STT announces start/stop of speech itself, so use External strategies.
-#             user_turn_strategies=UserTurnStrategies(
-#                 start=[ExternalUserTurnStartStrategy()],
-#                 stop=[ExternalUserTurnStopStrategy(timeout=0.2, wait_for_transcript=True)],
-#             ),
-#             user_turn_stop_timeout=3.0,
-#         ),
-#     )
-
-#     # ---------- pipeline ----------
-#     pipeline = Pipeline(
-#         [
-#             transport.input(),
-#             stt,
-#             user_aggregator,
-#             llm,
-#             tts,
-#             transport.output(),
-#             assistant_aggregator,
-#         ]
-#     )
-
-#     worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True))
-
-#     @transport.event_handler("on_client_connected")
-#     async def on_client_connected(transport, client):
-#         logger.info("Caller connected")
-#         # Fixed greeting (no LLM round trip), and remember it in the context.
-#         messages.append({"role": "assistant", "content": })
-#         await worker.queue_frame(TTSSpeakFrame(greeting))
-
-#     @transport.event_handler("on_client_disconnected")
-#     async def on_client_disconnected(transport, client):
-#         logger.info("Caller disconnected")
-#         await worker.cancel()
-
-#     runner = WorkerRunner()
-#     await runner.add_workers(worker)
-#     await runner.run()
-
-
-# if __name__ == "__main__":
-#     from pipecat.runner.run import main
-
-#     main()
-
-
 # bot.py
 #
 # Browser audio -> Sarvam STT -> Groq LLM + reservation tools
@@ -165,6 +22,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
+from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
 from pipecat.services.groq.llm import GroqLLMService
@@ -176,13 +34,114 @@ from pipecat.turns.user_stop import ExternalUserTurnStopStrategy
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
+from pipecat.services.nvidia.llm import NvidiaLLMService        
+
+from pipecat.observers.service_metrics_observer import ServiceMetricsObserver
+from pipecat.pipeline.worker import PipelineParams, PipelineWorker
+
+import json
+from datetime import datetime, timezone
+from db.connection import supabase
+
+
 from services import reservations as rs
 from bot.prompts import get_voice_prompt
-from bot.tools import TOOLS
+from bot.tools import (
+    check_availability,
+    reschedule_reservation,
+    cancel_reservation,
+    book_reservation,
+    find_my_reservations
+
+)
 
 load_dotenv(override=True)
 
 RESTAURANT_ID = "r1"
+
+
+
+from pipecat.observers.service_metrics_observer import ServiceMetricsObserver
+from pipecat.pipeline.worker import PipelineParams, PipelineWorker
+
+
+
+
+class SessionMetricsTracker:
+    """Accumulates usage tokens and latencies across the call."""
+
+    def __init__(self):
+        self.llm_prompt_tokens = 0
+        self.llm_completion_tokens = 0
+        self.llm_total_tokens = 0
+        self.tts_characters = 0
+        self.stt_audio_seconds = 0.0
+
+        self.llm_ttfb: list[float] = []
+        self.tts_ttfb: list[float] = []
+
+    def record_usage(self, record):
+        kind = str(getattr(record, "kind", "")).lower()
+        p_tokens = getattr(record, "prompt_tokens", None)
+        c_tokens = getattr(record, "completion_tokens", None)
+        t_tokens = getattr(record, "total_tokens", None)
+
+        if "llm" in kind or p_tokens is not None or c_tokens is not None:
+            if p_tokens:
+                self.llm_prompt_tokens += p_tokens
+            if c_tokens:
+                self.llm_completion_tokens += c_tokens
+            if t_tokens:
+                self.llm_total_tokens += t_tokens
+            elif p_tokens or c_tokens:
+                self.llm_total_tokens += (p_tokens or 0) + (c_tokens or 0)
+
+        chars = getattr(record, "characters", None)
+        if "tts" in kind or chars is not None:
+            if chars:
+                self.tts_characters += chars
+
+        audio_secs = getattr(record, "audio_seconds", None)
+        if "stt" in kind or audio_secs is not None:
+            if audio_secs:
+                self.stt_audio_seconds += audio_secs
+
+    def record_latency(self, record):
+        processor = str(getattr(record, "processor", "")).lower()
+        kind = str(getattr(record, "kind", "")).lower()
+        secs = getattr(record, "seconds", 0.0)
+
+        if "llm" in processor or "groq" in processor:
+            if "ttfb" in kind:
+                self.llm_ttfb.append(secs)
+        elif "tts" in processor or "sarvam" in processor:
+            if "ttfb" in kind:
+                self.tts_ttfb.append(secs)
+
+    def print_summary(self):
+        def avg(lst):
+            return round(sum(lst) / len(lst), 3) if lst else 0.0
+
+        border = "=" * 62
+        print(f"\n{border}")
+        print("📊 CALL SESSION METRICS & USAGE REPORT")
+        print(border)
+        print(f"🔹 LLM (Groq openai/gpt-oss-20b):")
+        print(f"   • Prompt Tokens:      {self.llm_prompt_tokens:,}")
+        print(f"   • Completion Tokens:  {self.llm_completion_tokens:,}")
+        print(f"   • Total Tokens:       {self.llm_total_tokens:,}")
+        print(
+            f"   • TTFB Latency:       avg {avg(self.llm_ttfb)}s (calls: {len(self.llm_ttfb)})"
+        )
+        print(f"🔹 TTS (Sarvam bulbul:v3):")
+        print(f"   • Synthesized Chars:  {self.tts_characters:,}")
+        print(
+            f"   • TTFB Latency:       avg {avg(self.tts_ttfb)}s (turns: {len(self.tts_ttfb)})"
+        )
+        print(f"🔹 STT (Sarvam Realtime):")
+        print(f"   • Audio Transcribed:  {self.stt_audio_seconds:.1f} seconds")
+        print(f"{border}\n")
+
 
 
 def _format_time(value) -> str:
@@ -270,18 +229,13 @@ Only use the restaurant information and tool results supplied by the system.
 Do not invent availability, booking details, policies, or successful operations.
 """.strip()
 
-    greeting = (
-        f"Hello, thank you for calling {name}. "
-        "How can I help you today?"
-    )
+   
 
-    return restaurant_info, greeting
-
+    return restaurant_info
 
 async def bot(runner_args: RunnerArguments):
-    """Entry point for each connected caller."""
+    call_start_time = datetime.now(timezone.utc).isoformat()
 
-    # ---------- Transport ----------
     transport = await create_transport(
         runner_args,
         {
@@ -292,26 +246,36 @@ async def bot(runner_args: RunnerArguments):
         },
     )
 
-    # ---------- Load restaurant data and build prompt ----------
-    # Supabase calls are synchronous, so run them in a worker thread.
-    restaurant_info, greeting = await asyncio.to_thread(
+    restaurant_info = await asyncio.to_thread(
         build_restaurant_info,
         RESTAURANT_ID,
     )
 
+
+    # 1. Initialize tracker and observer
+    metrics_tracker = SessionMetricsTracker()
+    metrics_observer = ServiceMetricsObserver()
+
+    @metrics_observer.event_handler("on_service_latency")
+    async def on_service_latency(observer, record):
+        metrics_tracker.record_latency(record)
+
+    @metrics_observer.event_handler("on_service_usage")
+    async def on_service_usage(observer, record):
+        metrics_tracker.record_usage(record)
+
+
     system_prompt = get_voice_prompt(restaurant_info)
+    messages = [{"role": "system", "content": system_prompt}]
+    context = LLMContext(messages, tools=[
+                                            check_availability,
+                                            book_reservation,
+                                            cancel_reservation,
+                                            reschedule_reservation,
+                                            find_my_reservations,
+                                        ]
+)
 
-    # LLMContext expects a list of message dictionaries.
-    messages = [
-        {
-            "role": "system",
-            "content": system_prompt,
-        }
-    ]
-
-    context = LLMContext(messages, tools=TOOLS)
-
-    # ---------- Speech to text ----------
     stt = SarvamRealtimeSTTService(
         api_key=os.environ["SARVAM_API_KEY"],
         sample_rate=16000,
@@ -320,48 +284,54 @@ async def bot(runner_args: RunnerArguments):
             mode="transcribe",
             stream_type="fast",
         ),
-        should_interrupt=True,
+        should_interrupt=False,
     )
 
-    # ---------- LLM ----------
     llm = GroqLLMService(
         api_key=os.environ["GROQ_API_KEY"],
         settings=GroqLLMService.Settings(
-            model=os.environ("GROQ_MODEL","openai/gpt-oss-120b"),
+            model="openai/gpt-oss-20b",
+            reasoning_effort="low",
+             max_tokens=300,
+             temperature = 0.3,
         ),
     )
 
-    # ---------- Text to speech ----------
+   
+
     tts = SarvamTTSService(
-        api_key=os.environ["SARVAM_API_KEY"],
-        settings=SarvamTTSService.Settings(
-            model=os.environ["TTS_MODEL","bulbul:v3"],
-            voice=os.environ["VOICE","shubh"],
-            language=os.environ["LANGUAGE","en-IN"],
-        ),
-        sample_rate=24000,
-    )
+    api_key=os.environ["SARVAM_API_KEY"],
+    settings=SarvamTTSService.Settings(
+        model="bulbul:v3",
+        voice="shubh",
+        language="en-IN",
+        pace=1.0,
+        min_buffer_size=10,
+        max_chunk_length=250,
+    ),
+    sample_rate=24000,
+)
 
-    # ---------- Conversation context ----------
-    user_aggregator, assistant_aggregator = (
-        LLMContextAggregatorPair(
-            context,
-            user_params=LLMUserAggregatorParams(
-                user_turn_strategies=UserTurnStrategies(
-                    start=[ExternalUserTurnStartStrategy()],
-                    stop=[
-                        ExternalUserTurnStopStrategy(
-                            timeout=0.2,
-                            wait_for_transcript=True,
-                        )
-                    ],
-                ),
-                user_turn_stop_timeout=3.0,
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
+        context,
+        user_params=LLMUserAggregatorParams(
+            user_turn_strategies=UserTurnStrategies(
+                start=[ExternalUserTurnStartStrategy()],
+                stop=[
+                    ExternalUserTurnStopStrategy(
+                        timeout=0.5,               # 1000ms of silence indicates end of turn
+                        wait_for_transcript=True, # Don't wait up to 3s for final transcript flag
+                    )
+                ],
             ),
-        )
+            user_turn_stop_timeout=1.2,           # Fallback max wait down from 3.0s to 1.2s
+        ),
     )
+    # # ---------- Filler speech on tool calls ----------
+    # @llm.event_handler("on_function_calls_started")
+    # async def on_function_calls_started(service, function_calls):
+    #     await tts.queue_frame(TTSSpeakFrame("Let me check that for you."))
 
-    # ---------- Pipeline ----------
     pipeline = Pipeline(
         [
             transport.input(),
@@ -376,29 +346,87 @@ async def bot(runner_args: RunnerArguments):
 
     worker = PipelineWorker(
         pipeline,
-        params=PipelineParams(enable_metrics=True),
+        params=PipelineParams(
+            enable_metrics=True,
+            enable_usage_metrics=True,  # Enables LLM tokens & TTS characters
+        ),
+        observers=[metrics_observer],
     )
+    runner = WorkerRunner(handle_sigint=runner_args.handle_sigint)
 
+    # Helper function to save the transcript to Supabase
+    async def save_call_record():
+        call_end_time = datetime.now(timezone.utc).isoformat()
+        transcript_lines = []
+        customer_phone = "unknown"
+        appointments = []
+
+        for msg in context.messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            tool_calls = msg.get("tool_calls")
+
+            if role == "user" and content:
+                transcript_lines.append(f"Caller: {content}")
+            elif role == "assistant" and content:
+                transcript_lines.append(f"Agent: {content}")
+            elif role == "assistant" and tool_calls:
+                for tc in tool_calls:
+                    fn_args = tc.get("function", {}).get("arguments", "{}")
+                    try:
+                        args_dict = json.loads(fn_args) if isinstance(fn_args, str) else fn_args
+                        if "customer_phone" in args_dict and args_dict["customer_phone"] != "<missing>":
+                            customer_phone = args_dict["customer_phone"]
+                    except Exception:
+                        pass
+            elif role == "tool":
+                try:
+                    tool_data = json.loads(msg.get("content", "{}"))
+                    if tool_data.get("ok") and "reservation_id" in tool_data:
+                        appointments.append(tool_data)
+                except Exception:
+                    pass
+
+        full_transcript = "\n".join(transcript_lines)
+
+        record = {
+            "phone_no": customer_phone,
+            "start_time": call_start_time,
+            "end_time": call_end_time,
+            "status": "completed",
+            "restaurant_id": RESTAURANT_ID,
+            "appointment_details": json.dumps(appointments) if appointments else None,
+            "summary": f"Reservation: {appointments[0]['reservation_id']}" if appointments else "Inquiry",
+            "transcript": full_transcript,
+        }
+
+        try:
+            await asyncio.to_thread(lambda: supabase.table("calls").insert(record).execute())
+            logger.info("Call transcript successfully saved to Supabase")
+        except Exception as e:
+            logger.error(f"Failed to save call record: {e}")
+
+    
+    
+
+    # Register event handlers ONCE only
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
         logger.info("Caller connected")
-
-        messages.append({
-            "role": "assistant",
-            "content": greeting,
-        })
-
-        await worker.queue_frame(TTSSpeakFrame(greeting))
+        await worker.queue_frame(TTSSpeakFrame(
+            "Hello! I'm Rosi, your restaurant receptionist. "
+            "I can help answer questions, book, cancel, or "
+            "reschedule reservations. How can I help you today?"))  
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
-        logger.info("Caller disconnected")
+        metrics_tracker.print_summary()
         await worker.cancel()
-
-    runner = WorkerRunner()
+        await runner.cancel(reason="Caller disconnected")
+    
+    
     await runner.add_workers(worker)
     await runner.run()
-
 
 if __name__ == "__main__":
     from pipecat.runner.run import main

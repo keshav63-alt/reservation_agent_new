@@ -5,7 +5,7 @@ from typing import Optional
 
 from loguru import logger
 from pipecat.services.llm_service import FunctionCallParams
-
+from services.call_log import CallLogger, current_call_logger
 from services import reservations as rs
 
 RESTAURANT_ID = "r1"
@@ -36,40 +36,54 @@ def _same_phone(a, b) -> bool:
     return bool(da) and da == db_
 
 
+
+
 async def _run(params: FunctionCallParams, fn, *args, **kwargs):
-    """Run a blocking Supabase call off the event loop and return its result."""
+    cl = current_call_logger.get()
+    if cl:
+        cl.log("tool_call", params.function_name, {"arguments": dict(params.arguments)})
     try:
         result = await asyncio.to_thread(fn, *args, **kwargs)
-    except Exception:
-        logger.exception(f"tool {params.function_name} failed")
-        result = {"ok": False,
-                  "message": "Something went wrong on our side. Please try again."}
+    except Exception as e:
+        logger.bind(no_db=True).exception(f"tool {params.function_name} failed")
+        result = {"ok": False, "message": "Something went wrong on our side. Please try again."}
+        if cl:
+            cl.log("error", f"tool {params.function_name} failed: {e!r}")
+    if cl:
+        cl.log("tool_result", params.function_name, {"result": result})
+        cl.record_outcome(params.function_name, result, params.arguments)
     await params.result_callback(result)
 
 
 async def _verify_owner(params: FunctionCallParams, reservation_id, phone) -> bool:
-    """Only the person who booked can cancel or change a booking."""
     res = await asyncio.to_thread(rs.get_reservation, str(reservation_id).strip())
     if not res or not _same_phone(res["customer_phone"], phone):
-        await params.result_callback({
-            "ok": False,
-            "message": "I couldn't find a reservation with that ID and phone number.",
-        })
+        result = {"ok": False,
+                  "message": "I couldn't find a reservation with that ID and phone number."}
+        cl = current_call_logger.get()
+        if cl:
+            cl.log("tool_result", params.function_name,
+                   {"stage": "ownership_check", "arguments": dict(params.arguments), "result": result})
+        await params.result_callback(result)
         return False
     return True
 
 
 # ---------- tools the LLM can call ----------
-async def check_availability(params: FunctionCallParams, date: str, time: str, party_size: int):
-    """Check whether a table is free. Call this before offering or booking a time.
-
-    Args:
-        date: Reservation date as YYYY-MM-DD.
-        time: Start time in 24-hour HH:MM, on the hour or half hour (for example 20:30).
-        party_size: Number of guests.
-    """
-    await _run(params, rs.check_availability, RESTAURANT_ID, date, time, _int(party_size))
-
+async def check_availability(
+    params: FunctionCallParams,
+    date: str = None,
+    time: str = None,
+    party_size: Optional[int] = None,
+):
+    """Check whether a table is free. Call this before offering or booking a time."""
+    if not date or not time or not party_size:
+        await params.result_callback({
+            "ok": False,
+            "message": "Missing details. Please ask the caller for the date, time, and number of guests before checking availability."
+        })
+        return
+    await _run(params, rs.check_availability, RESTAURANT_ID, str(date), str(time), _int(party_size))
 
 async def book_reservation(
     params: FunctionCallParams,
@@ -140,18 +154,28 @@ async def reschedule_reservation(
 
 
 async def find_my_reservations(params: FunctionCallParams, customer_phone: str):
-    """Look up a caller's upcoming reservations when they don't know their reservation ID.
+    """Look up a caller's upcoming reservations. 
+    ONLY call this if the caller explicitly asks to check or look up an existing reservation,
+    AND you already have their valid 10-digit phone number. Do not call with placeholder or missing values.
 
     Args:
-        customer_phone: The caller's phone number.
+        customer_phone: The caller's 10-digit phone number.
     """
+    if not customer_phone or "<missing>" in customer_phone:
+        await params.result_callback({"ok": False, "message": "Phone number required."})
+        return
+
     def _lookup():
         rows = rs.find_reservations_by_phone(_clean_phone(customer_phone))
         return {
             "ok": True,
             "reservations": [
-                {"reservation_id": r["reservation_id"], "date": r["reservation_date"],
-                 "time": r["reservation_time"][:5], "party_size": r["party_size"]}
+                {
+                    "reservation_id": r["reservation_id"],
+                    "date": r["reservation_date"],
+                    "time": r["reservation_time"][:5],
+                    "party_size": r["party_size"],
+                }
                 for r in rows
             ],
         }
