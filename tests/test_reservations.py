@@ -13,7 +13,6 @@ from services.reservations import (
     get_reservation,
     log_call,
     reschedule_reservation,
-    STEP_MIN,
 )
 
 
@@ -23,10 +22,6 @@ PHONE = "+910000000001"
 
 
 
-print("STEP_MIN =", STEP_MIN)
-print(check_availability("r1", DAY, "21:30", 2))
-print(check_availability("r1", DAY, "20:30", 2))
-print(check_availability("r1", DAY, "20:00", 2))
 
 # ---------- fixtures ----------
 def _wipe():

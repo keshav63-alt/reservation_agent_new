@@ -1,15 +1,13 @@
-# db/tools.py
+# bot/tools.py
 import asyncio
 import re
 from typing import Optional
 
 from loguru import logger
 from pipecat.services.llm_service import FunctionCallParams
-from services.call_log import CallLogger, current_call_logger
+from bot.config import DEFAULT_COUNTRY_CODE, RESTAURANT_ID
+from services.call_log import current_call_logger
 from services import reservations as rs
-
-RESTAURANT_ID = "r1"
-DEFAULT_COUNTRY_CODE = "+91"     # assumption: callers are in India
 
 
 # ---------- helpers ----------

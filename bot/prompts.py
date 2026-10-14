@@ -1,7 +1,6 @@
 
 
 # bot/prompts.py
-# bot/prompts.py
 
 
 def get_voice_prompt(restaurant_info: str) -> str:
@@ -16,7 +15,6 @@ rescheduling. Speak naturally and briefly, usually 1-2 sentences.
 
 # GENERAL RULES
 
-- Use natural filler words occasionally, such as "let me check" or "one moment".
 - Determine the caller's intent before taking action.
 - A greeting, name correction, or casual question is not a booking request.
 - Never invent customer details, availability, reservation IDs, or tool results.

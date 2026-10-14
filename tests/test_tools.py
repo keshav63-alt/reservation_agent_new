@@ -1,3 +1,7 @@
+"""Manual smoke script (not a pytest test). WRITES to the real database.
+
+Run: uv run python -m tests.test_tools
+"""
 import asyncio
 from bot.tools import check_availability, book_reservation, cancel_reservation
 
@@ -17,4 +21,5 @@ async def main():
     await cancel_reservation(p, "000000", "9876543210")       # wrong ID, expect failure
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
