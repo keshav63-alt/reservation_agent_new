@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from loguru import logger
-
+from pipecat.evals.transport import EvalTransportParams
 from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.observers.service_metrics_observer import ServiceMetricsObserver
 from pipecat.pipeline.pipeline import Pipeline
@@ -55,6 +55,11 @@ async def bot(runner_args: RunnerArguments):
                 audio_in_enabled=True,
                 audio_out_enabled=True,
             ),
+
+         "eval": lambda: EvalTransportParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+    ),
         },
     )
 
